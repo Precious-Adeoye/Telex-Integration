@@ -1,4 +1,4 @@
-using Hangfire;
+﻿using Hangfire;
 using Hangfire.SQLite;
 using Microsoft.EntityFrameworkCore;
 using Telex_Integration.Data;
@@ -14,30 +14,30 @@ namespace Telex_Integration
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.
-
             builder.Services.AddControllers();
-            // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();
 
-            // Configure SQLite Database
+            // === SQLite Database (EF Core) ===
+            var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=tasks.db";
             builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=tasks.db"));
+                options.UseSqlite(connectionString));
 
-            // Register Services
+            // === Register Services ===
             builder.Services.AddScoped<ITaskService, TaskService>();
             builder.Services.AddScoped<INLPService, NLPService>();
             builder.Services.AddSingleton<ReminderService>();
 
-            // Configure Hangfire with SQLite
+            // === Hangfire with SQLite (FIXED) ===
             builder.Services.AddHangfire(configuration => configuration
                 .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
                 .UseSimpleAssemblyNameTypeSerializer()
                 .UseRecommendedSerializerSettings()
-                .UseSQLiteStorage(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=tasks.db"));
+                .UseStorage(new SQLiteStorage(connectionString)) // ← CRITICAL FIX
+            );
 
             builder.Services.AddHangfireServer();
 
-            // Configure CORS for Telex.im
+            // === CORS ===
             builder.Services.AddCors(options =>
             {
                 options.AddPolicy("AllowTelex", policy =>
@@ -50,38 +50,35 @@ namespace Telex_Integration
 
             var app = builder.Build();
 
-            // Create database on startup
+            // === Ensure DB is created ===
             using (var scope = app.Services.CreateScope())
             {
                 var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 dbContext.Database.EnsureCreated();
             }
 
-
-            // Configure the HTTP request pipeline.
+            // === Middleware ===
             if (app.Environment.IsDevelopment())
             {
                 app.MapOpenApi();
             }
 
             app.UseCors("AllowTelex");
-
             app.UseAuthorization();
-
-
             app.MapControllers();
 
-            // Hangfire Dashboard (optional, for monitoring)
+            // === Hangfire Dashboard ===
             app.UseHangfireDashboard("/hangfire");
 
-            // Start reminder service
-            var reminderService = app.Services.GetRequiredService<ReminderService>();
-            RecurringJob.AddOrUpdate("check-reminders",
-                () => reminderService.CheckAndSendReminders(),
+            // === Recurring Job ===
+            RecurringJob.AddOrUpdate<ReminderService>(
+                "check-reminders",
+                service => service.CheckAndSendReminders(),
                 Cron.Minutely);
 
-
-            var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+            // === Run on correct port (Docker, Cloud Run, etc.) ===
+            var port = Environment.GetEnvironmentVariable("PORT") ?? "8080"; // Cloud Run uses 8080
+            app.Urls.Add($"http://0.0.0.0:{port}");
 
             app.Run();
         }
