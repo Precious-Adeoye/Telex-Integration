@@ -1,0 +1,6 @@
+@Telex_Integration_HostAddress = http://localhost:5062
+
+GET {{Telex_Integration_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
