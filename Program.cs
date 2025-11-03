@@ -1,4 +1,5 @@
-
+using Hangfire;
+using Hangfire.SQLite;
 using Microsoft.EntityFrameworkCore;
 using Telex_Integration.Data;
 using Telex_Integration.ITelextServices;
